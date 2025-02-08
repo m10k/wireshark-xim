@@ -661,7 +661,18 @@ function dissect_XIM_GET_IM_VALUES(buffer, pinfo, tree, endian)
       i = 0
 
       while i < n do
-	 insert_raw(subtree, buffer(4 + i, 2), "id: " .. get_data(buffer, 4 + i, 2))
+	 local desc
+	 local id
+	 local name
+
+	 id = get_data(buffer, 4 + i, 2)
+	 desc = "id: " .. id
+	 name = get_attribute_name("XIM", id)
+	 if name ~= nil then
+	    desc = desc .. " (" .. name .. ")"
+	 end
+
+	 insert_raw(subtree, buffer(4 + i, 2), desc)
 	 i = i + 2
       end
    end
