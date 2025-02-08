@@ -683,7 +683,8 @@ function dissect_XIM_GET_IM_VALUES(buffer, pinfo, tree, endian)
 end
 
 function dissect_XIM_GET_IC_VALUES(buffer, pinfo, tree, endian)
-   local len
+   local subtree
+   local n
    local i
    local ids
    local sep
@@ -692,18 +693,32 @@ function dissect_XIM_GET_IC_VALUES(buffer, pinfo, tree, endian)
    ids = ""
    sep = ""
    max = buffer:len() - 6
+   n = get_data(buffer, 4, 2)
+   i = 0
 
    insert_field(tree, "xim.im", buffer(0, 2))
    insert_field(tree, "xim.ic", buffer(2, 2))
-   insert_field(tree, "xim.get_ic_values.list_length", buffer(4, 2))
-   len = get_data(buffer, 4, 2)
+   insert_field(tree, "xim.get_ic_values.length", buffer(4, 2))
+   if n > 0 then
+      subtree = insert_field(tree, "xim.get_ic_values.list", buffer(6, n))
+      i = 0
 
-   for i = 0, len, 2 do
-      ids = ids .. sep .. get_data(buffer, 6 + i, 2)
-      sep = ", "
+      while i < n do
+	 local id
+	 local desc
+	 local name
+
+	 id = get_data(buffer, 6 + i, 2)
+	 desc = "id: " .. id
+	 name = get_attribute_name("XIC", id)
+	 if name ~= nil then
+	    desc = desc .. " (" .. name .. ")"
+	 end
+
+	 insert_raw(subtree, buffer(6 + i, 2), desc)
+	 i = i + 2
+      end
    end
-
-   insert_field(tree, "xim.get_ic_values.list_data", buffer(6, i), ids)
 end
 
 function get_forward_flag_names(flags)
@@ -729,82 +744,46 @@ end
 
 function dissect_XIM_FORWARD_EVENT(buffer, pinfo, tree, endian)
    local subtree
-   local flag
+   local length
    local flag_desc
 
-   subtree = tree:add(xim, buffer(), "XIM_FORWARD_EVENT data")
-   if endian == 'B' then
-      flag = buffer(4, 2):uint()
-      flag_desc = get_forward_flag_names(flag)
-      subtree:add(Fxim_im, buffer(0, 2))
-      subtree:add(Fxim_ic, buffer(2, 2))
-      subtree:add(Fforward_flag, buffer(4, 2)):append_text(" (" .. flag_desc .. ")")
-      subtree:add(Fforward_serial, buffer(6, 2))
-   else
-      flag = buffer(4, 2):le_uint()
-      flag_desc = get_forward_flag_names(flag)
-      subtree:add_le(Fxim_im, buffer(0, 2))
-      subtree:add_le(Fxim_ic, buffer(2, 2))
-      subtree:add_le(Fforward_flag, buffer(4, 2)):append_text(" (" .. flag_desc .. ")")
-      subtree:add_le(Fforward_serial, buffer(6, 2))
-   end
+   flag_desc = get_forward_flag_names(get_data(buffer, 4, 2))
+
+   insert_field(tree, "xim.im", buffer(0, 2))
+   insert_field(tree, "xim.ic", buffer(2, 2))
+   insert_field(tree, "xim.forward_event.flag", buffer(4, 2), flag_desc)
+   insert_field(tree, "xim.forward_event.serial", buffer(6, 2))
 
    if buffer:len() > 8 then
-      dissect_EVENT(buffer(8, -1), pinfo, subtree, endian)
+      subtree = insert_raw(tree, buffer(8, -1), "XCoreKeyEvent data")
+      dissect_XCoreKeyEvent(buffer(8, -1), pinfo, subtree, endian)
    end
 end
 
-function dissect_EVENT(buffer, pinfo, tree, endian)
-   local subtree
-
-   subtree = tree:add(xim, buffer(), "XCoreKeyEvent data")
-   if endian == 'B' then
-      subtree:add(Fevent_type, buffer(0, 1))
-      subtree:add(Fevent_detail, buffer(1, 1))
-      subtree:add(Fevent_seq, buffer(2, 2))
-      subtree:add(Fevent_time, buffer(4, 4))
-      subtree:add(Fevent_root, buffer(8, 4))
-      subtree:add(Fevent_window, buffer(12, 4))
-      subtree:add(Fevent_child, buffer(16, 4))
-      subtree:add(Fevent_rootx, buffer(20, 2))
-      subtree:add(Fevent_rooty, buffer(22, 2))
-      subtree:add(Fevent_eventx, buffer(24, 2))
-      subtree:add(Fevent_eventy, buffer(26, 2))
-      subtree:add(Fevent_state, buffer(28, 2))
-      subtree:add(Fevent_samescr, buffer(30, 1))
-      subtree:add(Fevent_unused, buffer(31, 1))
-   else
-      subtree:add_le(Fevent_type, buffer(0, 1))
-      subtree:add_le(Fevent_detail, buffer(1, 1))
-      subtree:add_le(Fevent_seq, buffer(2, 2))
-      subtree:add_le(Fevent_time, buffer(4, 4))
-      subtree:add_le(Fevent_root, buffer(8, 4))
-      subtree:add_le(Fevent_window, buffer(12, 4))
-      subtree:add_le(Fevent_child, buffer(16, 4))
-      subtree:add_le(Fevent_rootx, buffer(20, 2))
-      subtree:add_le(Fevent_rooty, buffer(22, 2))
-      subtree:add_le(Fevent_eventx, buffer(24, 2))
-      subtree:add_le(Fevent_eventy, buffer(26, 2))
-      subtree:add_le(Fevent_state, buffer(28, 2))
-      subtree:add_le(Fevent_samescr, buffer(30, 1))
-      subtree:add_le(Fevent_unused, buffer(31, 1))
-   end
+function dissect_XCoreKeyEvent(buffer, pinfo, tree, endian)
+   insert_raw(tree, buffer( 0, 1), "type: "        .. get_data(buffer,  0, 1))
+   insert_raw(tree, buffer( 1, 1), "detail: "      .. get_data(buffer,  1, 1))
+   insert_raw(tree, buffer( 2, 2), "sequence: "    .. get_data(buffer,  2, 2))
+   insert_raw(tree, buffer( 4, 4), "time: "        .. get_data(buffer,  4, 4))
+   insert_raw(tree, buffer( 8, 4), "root: "        .. get_data(buffer,  8, 4))
+   insert_raw(tree, buffer(12, 4), "window: "      .. get_data(buffer, 12, 4))
+   insert_raw(tree, buffer(16, 4), "child: "       .. get_data(buffer, 16, 4))
+   insert_raw(tree, buffer(20, 2), "root-x: "      .. get_data(buffer, 20, 2))
+   insert_raw(tree, buffer(22, 2), "root-y: "      .. get_data(buffer, 22, 2))
+   insert_raw(tree, buffer(24, 2), "event-x: "     .. get_data(buffer, 24, 2))
+   insert_raw(tree, buffer(26, 2), "event-y: "     .. get_data(buffer, 26, 2))
+   insert_raw(tree, buffer(28, 2), "state: "       .. get_data(buffer, 28, 2))
+   insert_raw(tree, buffer(30, 1), "same-screen: " .. get_data(buffer, 30, 1))
+   insert_raw(tree, buffer(31, 1), "unused: "      .. get_data(buffer, 31, 1))
 end
-
 
 function dissect_XIM_imic(buffer, pinfo, tree, endian, opcode_name)
-   local subtree
-
-   subtree = tree:add(xim, buffer(), name .. " data")
-   tree_add(subtree, "xim.im", endian, buffer(0, 2))
-   tree_add(subtree, "xim.ic", endian, buffer(2, 2))
+   insert_field(tree, "xim.im", buffer(0, 2))
+   insert_field(tree, "xim.ic", buffer(2, 2))
 end
 
 function dissect_XIM_im(buffer, pinfo, tree, endian, opcode_name)
-   local subtree
-
-   subtree = tree:add(xim, buffer(), name .. " data")
-   tree_add(subtree, "xim.im", endian, buffer(0, 2))
+   insert_field(tree, "xim.im", buffer(0, 2))
 end
 
 function get_commit_flag_names(flags)
