@@ -173,7 +173,7 @@ fields = {
    ["xim.commit.keysym"]               = ProtoField.new("keysym",
 							"xim.commit.keysym",
 							ftypes.UINT32),
-   ["xim.commit.string_length"]        = ProtoField.new("string-len",
+   ["xim.commit.string_length"]        = ProtoField.new("string-length",
 							"xim.commit.string_length",
 							ftypes.UINT16),
    ["xim.commit.string_data"]          = ProtoField.new("string-data",
@@ -857,58 +857,37 @@ function dissect_XIM_CREATE_IC(buffer, pinfo, tree, endian, opcode_name)
 end
 
 function dissect_XIM_COMMIT(buffer, pinfo, tree, endian, opcode_name)
-   local subtree
    local flag
-   local offset
-   local len
    local flag_desc
+   local offset
+   local p
 
-   subtree = tree:add(xim, buffer(), "XIM_COMMIT data")
-   if endian == 'B' then
-      flag = buffer(4, 2):uint()
-      flag_desc = get_commit_flag_names(flag)
-      subtree:add(Fxim_im, buffer(0, 2))
-      subtree:add(Fxim_ic, buffer(2, 2))
-      subtree:add(Fcommit_flag, buffer(4, 2)):append_text(" (" .. flag_desc .. ")")
-      offset = 6
+   flag = get_data(buffer, 4, 2)
+   flag_desc = get_commit_flag_names(flag)
+   offset = 6
 
-      if bit32.band(flag, 4) ~= 0 then
-	 subtree:add(Fcommit_unused, buffer(6, 2))
-	 subtree:add(Fcommit_keysym, buffer(8, 4))
-	 offset = offset + 6
+   insert_field(tree, "xim.im", buffer(0, 2))
+   insert_field(tree, "xim.ic", buffer(2, 2))
+   insert_field(tree, "xim.commit.flag", buffer(4, 2), flag_desc)
+
+   if bit32.band(flag, 4) ~= 0 then -- XLookupKeySym
+      insert_field(tree, "xim.commit.unused", buffer(6, 2))
+      insert_field(tree, "xim.commit.keysym", buffer(8, 4))
+      offset = offset + 6
+   end
+
+   if bit32.band(flag, 2) ~= 0 then -- XLookupChars
+      insert_field(tree, "xim.commit.string_length", buffer(offset, 2))
+      len = get_data(buffer, offset, 2)
+      if len > buffer:len() - offset - 2 then
+	 insert_field(tree, "xim.commit.string_data", buffer(offset + 2, -1))
+      else
+	 insert_field(tree, "xim.commit.string_data", buffer(offset + 2, len))
       end
 
-      if bit32.band(flag, 2) ~= 0 then
-	 subtree:add(Fcommit_string_len, buffer(offset, 2))
-	 len = buffer(offset, 2):uint()
-	 if len > buffer:len() - offset - 2 then
-	    subtree:add(Fcommit_string_data, buffer(offset + 2, -1))
-	 else
-	    subtree:add(Fcommit_string_data, buffer(offset + 2, len))
-	 end
-      end
-   else
-      flag = buffer(4, 2):le_uint()
-      flag_desc = get_commit_flag_names(flag)
-      subtree:add_le(Fxim_im, buffer(0, 2))
-      subtree:add_le(Fxim_ic, buffer(2, 2))
-      subtree:add_le(Fcommit_flag, buffer(4, 2)):append_text(" (" .. flag_desc .. ")")
-      offset = 6
-
-      if bit32.band(flag, 4) ~= 0 then
-	 subtree:add_le(Fcommit_unused, buffer(6, 2))
-	 subtree:add_le(Fcommit_keysym, buffer(8, 4))
-	 offset = offset + 6
-      end
-
-      if bit32.band(flag, 2) ~= 0 then
-	 subtree:add_le(Fcommit_string_len, buffer(offset, 2))
-	 len = buffer(offset, 2):le_uint()
-	 if len > buffer:len() - offset - 2 then
-	    subtree:add_le(Fcommit_string_data, buffer(offset + 2, -1))
-	 else
-	    subtree:add_le(Fcommit_string_data, buffer(offset + 2, len))
-	 end
+      p = Pad(len)
+      if p > 0 then
+	 insert_raw(tree, buffer(offset + 2 + len, p), "padding")
       end
    end
 end
